@@ -482,7 +482,7 @@ La mayoría de las ejecuciones siguen la misma ruta de evidencia: enrutar la sol
 
 ## 📡 Fuentes de Datos y Fallback Inteligente
 
-Una sola llamada `get_market_data`, **29 fuentes de datos de mercado**, una de ellas el mercado premium opcional **QVeris** (además del mercado premium opcional **QVeris**). Establece `source: "auto"`: el cargador elige según el símbolo y luego recorre una cadena por mercado ordenada por **riesgo de bloqueo de IP**: primero las fuentes públicas que nunca se bloquean, al final las limitadas o que requieren clave. Cero configuración, sin punto único de fallo.
+Una sola llamada `get_market_data`, **30 fuentes de datos de mercado**, una de ellas el mercado premium opcional **QVeris** (además del mercado premium opcional **QVeris**). Establece `source: "auto"`: el cargador elige según el símbolo y luego recorre una cadena por mercado ordenada por **riesgo de bloqueo de IP**: primero las fuentes públicas que nunca se bloquean, al final las limitadas o que requieren clave. Cero configuración, sin punto único de fallo.
 
 | Fuente | Mercados | Autenticación | Rol |
 |--------|---------|------|------|
@@ -505,6 +505,7 @@ Una sola llamada `get_market_data`, **29 fuentes de datos de mercado**, una de e
 | `tickerall` | forex / metales | clave + cuenta (solo lectura) | el mismo feed MT5 del bróker, **alojado**: sin terminal local y en cualquier sistema operativo (solo por selección explícita, nunca en el respaldo automático) |
 | `pykrx` | Corea (KRX: KOSPI/KOSDAQ) | ninguna | barras diarias de KOSPI / KOSDAQ para `.KS` / `.KQ` (extra opcional `krx`) |
 | `india_broker` | India (NSE/BSE) | login de broker | barras de solo lectura de Zerodha / Shoonya / Dhan para `.NS` / `.BO` (al final de la cadena de fallback) |
+| `india_local` | India (NSE/BSE) | ninguna | local Dhan Parquet archive (`VIBE_TRADING_INDIA_DATA_ROOT`): NSE/BSE equities, indices (`^NSEI`) and continuous futures (`NIFTY-I.NFO`, ratio back-adjusted at rolls) |
 | `b3_cotahist` | Brazil (B3) | none | barras diarias oficiales del mercado al contado y de lotes fraccionarios (sin ajustar, BRL), importadas con `python -m src.br_data sync`; alternativa local para `.SA` |
 | `local` | cualquiera | ninguna | tu propio CSV / Parquet / DuckDB mediante el prefijo `local:` |
 
@@ -513,10 +514,10 @@ Una sola llamada `get_market_data`, **29 fuentes de datos de mercado**, una de e
 - **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **EE. UU.** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
-- **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local` · `india_local` &nbsp;·&nbsp; **India futures** → `india_local`
 - **Brazil (B3 `.SA`)** → `yahoo` · `yfinance` · `b3_cotahist` · `local`
 - **Corea (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
-- **Índices** → `yahoo` · `yfinance` · `gildata` · `local`
+- **Índices** → `yahoo` · `yfinance` · `gildata` · `local` · `india_local`
 - **Reino Unido (LSE)** → `yahoo` · `yfinance` · `local` *(solo cotizaciones declaradas en GBP/GBp)*
 - **Cripto** → `okx` · `binance` · `ccxt` · `yfinance` · `local`
 - **Forex / metales** → `mt5` · `akshare` · `yfinance` · `local`
@@ -715,7 +716,7 @@ Ejecuta `vibe-trading alpha list` para explorar, `vibe-trading alpha show <id>` 
 </details>
 
 <details>
-<summary><b>Motores de Backtest</b> <sub>11 motores + cartera de opciones, composite cross-market</sub></summary>
+<summary><b>Motores de Backtest</b> <sub>12 motores + cartera de opciones, composite cross-market</sub></summary>
 
 | Motor | Mercado | Notas |
 |--------|--------|-------|
@@ -1856,8 +1857,8 @@ Vibe-Trading/
 │   │   └── providers/              # Abstracción de proveedores LLM
 │   │
 │   └── backtest/                   # Motores de backtest
-│       ├── engines/                #   10 motores + motor compuesto multi-mercado + options_portfolio
-│       ├── loaders/                #   29 fuentes: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata, b3_cotahist
+│       ├── engines/                #   11 motores + motor compuesto multi-mercado + options_portfolio
+│       ├── loaders/                #   30 fuentes: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, india_local, tickerall, gildata, b3_cotahist
 │       │   ├── base.py             #   Protocolo DataLoader
 │       │   └── registry.py         #   Registro + cadenas de fallback automáticas
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity

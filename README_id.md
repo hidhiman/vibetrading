@@ -644,7 +644,7 @@ the wall-clock activity watchdog.
 
 ## 📡 Sumber Data & Smart Fallback
 
-Satu call `get_market_data`, **29 sumber data market**, salah satunya marketplace premium opsional **QVeris**. Atur `source: "auto"` — loader memilih berdasarkan simbol lalu mengikuti chain per market yang diurutkan berdasarkan **risiko IP-ban**: sumber publik yang tidak pernah diblokir lebih dulu, sumber throttled / membutuhkan key belakangan. Zero-config, tanpa single point of failure.
+Satu call `get_market_data`, **30 sumber data market**, salah satunya marketplace premium opsional **QVeris**. Atur `source: "auto"` — loader memilih berdasarkan simbol lalu mengikuti chain per market yang diurutkan berdasarkan **risiko IP-ban**: sumber publik yang tidak pernah diblokir lebih dulu, sumber throttled / membutuhkan key belakangan. Zero-config, tanpa single point of failure.
 
 | Sumber | Market | Auth | Peran |
 |--------|---------|------|------|
@@ -667,6 +667,7 @@ Satu call `get_market_data`, **29 sumber data market**, salah satunya marketplac
 | `tickerall` | forex / metals | key + akun (read-only) | feed broker MT5 yang sama, **hosted** — tanpa terminal lokal, OS apa pun (hanya eksplisit, tidak pernah auto fallback) |
 | `pykrx` | Korea (KRX: KOSPI/KOSDAQ) | tidak ada | bar harian KOSPI / KOSDAQ untuk `.KS` / `.KQ` (extra `krx` opsional) |
 | `india_broker` | India (NSE/BSE) | login broker | bar Zerodha / Shoonya / Dhan read-only untuk `.NS` / `.BO` (ujung fallback chain) |
+| `india_local` | India (NSE/BSE) | tidak ada | local Dhan Parquet archive (`VIBE_TRADING_INDIA_DATA_ROOT`): NSE/BSE equities, indices (`^NSEI`) and continuous futures (`NIFTY-I.NFO`, ratio back-adjusted at rolls) |
 | `b3_cotahist` | Brazil (B3) | none | bar harian resmi B3 untuk pasar tunai/odd-lot (mentah, BRL), diimpor dengan `python -m src.br_data sync`; cadangan luring untuk `.SA` |
 | `local` | apa pun | tidak ada | CSV / Parquet / DuckDB Anda sendiri melalui prefix `local:` |
 
@@ -675,10 +676,10 @@ Satu call `get_market_data`, **29 sumber data market**, salah satunya marketplac
 - **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
-- **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local` · `india_local` &nbsp;·&nbsp; **India futures** → `india_local`
 - **Brazil (B3 `.SA`)** → `yahoo` · `yfinance` · `b3_cotahist` · `local`
 - **Korea (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
-- **Indeks** → `yahoo` · `yfinance` · `gildata` · `local`
+- **Indeks** → `yahoo` · `yfinance` · `gildata` · `local` · `india_local`
 - **UK (LSE)** → `yahoo` · `yfinance` · `local` *(declared GBP/GBp quotes only)*
 - **Crypto** → `okx` · `binance` · `ccxt` · `yfinance` · `local`
 - **Forex / metals** → `mt5` · `akshare` · `yfinance` · `local`
@@ -875,7 +876,7 @@ Jalankan `vibe-trading alpha list` untuk menjelajah, `vibe-trading alpha show <i
 </details>
 
 <details>
-<summary><b>Engine Backtest</b> <sub>11 engine + portofolio opsi, komposit lintas market</sub></summary>
+<summary><b>Engine Backtest</b> <sub>12 engine + portofolio opsi, komposit lintas market</sub></summary>
 
 | Engine | Market | Catatan |
 |--------|--------|-------|
@@ -2101,8 +2102,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider abstraction
 │   │
 │   └── backtest/                   # Backtest engines
-│       ├── engines/                #   10 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   29 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata, b3_cotahist
+│       ├── engines/                #   11 engines + composite cross-market engine + options_portfolio
+│       ├── loaders/                #   30 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, india_local, tickerall, gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity

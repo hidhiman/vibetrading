@@ -47,6 +47,8 @@ EXCLUDED_PUBLIC_SOURCES = {
     # Reads the local SQLite store that `python -m src.br_data sync` fills
     # from B3's COTAHIST files; it never calls a network endpoint itself.
     "b3_cotahist": "local br-data store, synced separately",
+    # Reads the operator's Dhan parquet archive (VIBE_TRADING_INDIA_DATA_ROOT).
+    "india_local": "operator parquet archive, not a public endpoint",
     # Retired 2026-10-08 (HKUDS/Vibe-Trading#1729): TDX servers stopped
     # answering the mootdx/tdxpy client protocol in 2026-07
     # (mootdx/mootdx#157) and upstream is dormant. The loader stays

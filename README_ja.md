@@ -483,7 +483,7 @@ vibe-trading connector install /tmp/my-broker
 
 ## 📡 データソースとスマートフォールバック
 
-1 回の `get_market_data` 呼び出しで **29 のマーケットデータソース**（うち **QVeris** はオプションの有料マーケットプレイス）にアクセスできます。`source: "auto"` を指定すれば、loader が銘柄に応じてソースを選び、**IP 規制リスク**の順に並んだ市場別チェーンをたどります。規制を受けない公開ソースを先に、スロットリングや key を要するソースを最後に試します。設定不要、単一障害点なし。
+1 回の `get_market_data` 呼び出しで **30 のマーケットデータソース**（うち **QVeris** はオプションの有料マーケットプレイス）にアクセスできます。`source: "auto"` を指定すれば、loader が銘柄に応じてソースを選び、**IP 規制リスク**の順に並んだ市場別チェーンをたどります。規制を受けない公開ソースを先に、スロットリングや key を要するソースを最後に試します。設定不要、単一障害点なし。
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -506,6 +506,7 @@ vibe-trading connector install /tmp/my-broker
 | `tickerall` | forex / metals | key + アカウント（読み取り専用） | 同じブローカーの MT5 フィードを**ホスト型**で — ローカル端末不要、OS を問わない（明示指定のみ、auto フォールバックには決して入らない） |
 | `pykrx` | 韓国（KRX：KOSPI/KOSDAQ） | 不要 | `.KS` / `.KQ` の KOSPI / KOSDAQ 日足（任意の `krx` extra） |
 | `india_broker` | インド（NSE/BSE） | ブローカーログイン | `.NS` / `.BO` 向けの読み取り専用 Zerodha / Shoonya / Dhan bars（フォールバックチェーン末尾） |
+| `india_local` | インド（NSE/BSE） | none | local Dhan Parquet archive (`VIBE_TRADING_INDIA_DATA_ROOT`): NSE/BSE equities, indices (`^NSEI`) and continuous futures (`NIFTY-I.NFO`, ratio back-adjusted at rolls) |
 | `b3_cotahist` | Brazil (B3) | none | ローカル B3 公式現物・単元未満株の日足（未調整、BRL）。`python -m src.br_data sync` で取得する `.SA` のオフライン代替ソース |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
@@ -514,10 +515,10 @@ vibe-trading connector install /tmp/my-broker
 - **A 株** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **米国株** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **香港株** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
-- **インド株（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **インド株（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local` · `india_local` &nbsp;·&nbsp; **India futures** → `india_local`
 - **Brazil (B3 `.SA`)** → `yahoo` · `yfinance` · `b3_cotahist` · `local`
 - **韓国（KOSPI/KOSDAQ）** → `pykrx` · `yahoo` · `yfinance` · `local`
-- **指数** → `yahoo` · `yfinance` · `gildata` · `local`
+- **指数** → `yahoo` · `yfinance` · `gildata` · `local` · `india_local`
 - **英国（LSE）** → `yahoo` · `yfinance` · `local` *（GBP/GBp と明示されたクォートのみ）*
 - **暗号資産** → `okx` · `binance` · `ccxt` · `yfinance` · `local`
 - **為替/貴金属** → `mt5` · `akshare` · `yfinance` · `local`
@@ -709,7 +710,7 @@ Paper-vs-live is a **structural per-broker runtime guard** (account-id format, h
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>11 engines + options portfolio, cross-market composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>12 engines + options portfolio, cross-market composite</sub></summary>
 
 | Engine | Market | Notes |
 |--------|--------|-------|
@@ -1776,8 +1777,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM プロバイダー抽象化
 │   │
 │   └── backtest/                   # バックテストエンジン
-│       ├── engines/                #   10 エンジン + クロスマーケット composite engine + options_portfolio
-│       ├── loaders/                #   29 ソース: tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker、tickerall、gildata, b3_cotahist
+│       ├── engines/                #   11 エンジン + クロスマーケット composite engine + options_portfolio
+│       ├── loaders/                #   30 ソース: tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker、india_local、tickerall、gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自動フォールバックチェーン
 │       └── optimizers/             #   MVO、equal vol、max div、risk parity

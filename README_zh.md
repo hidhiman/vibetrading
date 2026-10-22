@@ -498,7 +498,7 @@ vibe-trading connector install /tmp/my-broker
 
 ## 📡 数据源与智能 Fallback
 
-一次 `get_market_data` 调用，**29 个行情数据源**（其中 **QVeris** 是可选的付费市场）。设 `source: "auto"`——loader 按符号自动选源，再沿按 **被封 IP 风险** 排序的同市场链向下走（永不封的公开源在前，限速 / 需 key 的在后）。零配置，无单点故障。
+一次 `get_market_data` 调用，**30 个行情数据源**（其中 **QVeris** 是可选的付费市场）。设 `source: "auto"`——loader 按符号自动选源，再沿按 **被封 IP 风险** 排序的同市场链向下走（永不封的公开源在前，限速 / 需 key 的在后）。零配置，无单点故障。
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -521,6 +521,7 @@ vibe-trading connector install /tmp/my-broker
 | `tickerall` | 外汇 / 贵金属 | key + 账户（只读） | 同一家券商的 MT5 数据源，**托管** —— 无需本地终端，任意操作系统（仅显式选用，绝不进 auto 链） |
 | `pykrx` | 韩国（KRX：KOSPI/KOSDAQ） | 无 | `.KS` / `.KQ` 的 KOSPI / KOSDAQ 日线（可选 `krx` extra） |
 | `india_broker` | 印度（NSE/BSE） | 券商登录 | 只读 Zerodha / Shoonya / Dhan bars，服务 `.NS` / `.BO`（fallback 链尾） |
+| `india_local` | 印度（NSE/BSE） | none | local Dhan Parquet archive (`VIBE_TRADING_INDIA_DATA_ROOT`): NSE/BSE equities, indices (`^NSEI`) and continuous futures (`NIFTY-I.NFO`, ratio back-adjusted at rolls) |
 | `b3_cotahist` | Brazil (B3) | none | 本地 B3 官方现货／零股日线（原始价格、BRL），由 `python -m src.br_data sync` 导入；`.SA` 的离线后备源 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
@@ -529,10 +530,10 @@ vibe-trading connector install /tmp/my-broker
 - **A股** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
-- **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
+- **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local` · `india_local` &nbsp;·&nbsp; **India futures** → `india_local`
 - **Brazil (B3 `.SA`)** → `yahoo` · `yfinance` · `b3_cotahist` · `local`
 - **韩国（KOSPI/KOSDAQ）** → `pykrx` · `yahoo` · `yfinance` · `local`
-- **指数** → `yahoo` · `yfinance` · `gildata` · `local`
+- **指数** → `yahoo` · `yfinance` · `gildata` · `local` · `india_local`
 - **英国（LSE）** → `yahoo` · `yfinance` · `local` *（仅接受明示为 GBP/GBp 的报价）*
 - **加密** → `okx` · `binance` · `ccxt` · `yfinance` · `local`
 - **外汇 / 贵金属** → `mt5` · `akshare` · `yfinance` · `local`
@@ -722,7 +723,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>11 个引擎 + options portfolio，跨市场 composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>12 个引擎 + options portfolio，跨市场 composite</sub></summary>
 
 | 引擎 | 市场 | 说明 |
 |------|------|------|
@@ -1771,8 +1772,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider 抽象层
 │   │
 │   └── backtest/                   # 回测引擎
-│       ├── engines/                #   10 个引擎 + 跨市场 composite 引擎 + options_portfolio
-│       ├── loaders/                #   29 个数据源：tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker、tickerall、gildata, b3_cotahist
+│       ├── engines/                #   11 个引擎 + 跨市场 composite 引擎 + options_portfolio
+│       ├── loaders/                #   30 个数据源：tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker、india_local、tickerall、gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自动 fallback 链路
 │       └── optimizers/             #   MVO、equal vol、max div、risk parity
