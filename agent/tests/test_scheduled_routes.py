@@ -1,0 +1,731 @@
+"""Route-level contracts for the scheduled research endpoints.
+
+Exercises the REST surface mounted by ``register_scheduled_routes``:
+``POST /scheduled-runs`` (create), ``GET /scheduled-runs`` (list + filter),
+and ``DELETE /scheduled-runs/{job_id}`` (cancel). Each test drives the app
+through ``TestClient`` and asserts the persisted store state, so the route
+wiring, validation, and status codes are covered end to end.
+
+The store singleton is redirected to a per-test ``tmp_path`` file so nothing
+touches the real runtime root, and the default ``TestClient`` client host
+(``testclient``) is treated as a loopback caller, so ``require_auth`` passes
+without a configured API key.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+import api_server
+from src.api import scheduled_routes
+from src.scheduled_research.models import (
+    DeliveryRecord,
+    DeliveryStatus,
+    JobStatus,
+    ScheduledResearchJob,
+)
+from src.scheduled_research.store import ScheduledResearchJobStore
+
+
+@pytest.fixture
+def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ScheduledResearchJobStore:
+    """Isolate the module-level store singleton onto a temp file."""
+    isolated = ScheduledResearchJobStore(path=tmp_path / "scheduled_jobs.json")
+    monkeypatch.setattr(scheduled_routes, "_scheduled_research_store", isolated)
+    return isolated
+
+
+@pytest.fixture
+def client(store: ScheduledResearchJobStore, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.delenv("API_AUTH_KEY", raising=False)
+    monkeypatch.setattr(api_server, "_API_KEY", "")
+    return TestClient(api_server.app, client=("127.0.0.1", 50000))
+
+
+def _seed(store: ScheduledResearchJobStore, **overrides: object) -> ScheduledResearchJob:
+    defaults: dict[str, object] = {
+        "id": "job-seed",
+        "prompt": "scan momentum names",
+        "schedule": "60000",
+        "next_run_at": 1_700_000_000_000,
+        "status": JobStatus.PENDING,
+        "created_at": 1_700_000_000_000,
+    }
+    defaults.update(overrides)
+    job = ScheduledResearchJob(**defaults)  # type: ignore[arg-type]
+    store.upsert(job)
+    return job
+
+
+def test_create_persists_job_and_returns_201(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "daily-scan",
+            "prompt": "rank S&P 500 by 12-1 momentum",
+            "schedule": "0 9 * * *",
+            "config": {"universe": "sp500"},
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == "daily-scan"
+    assert body["status"] == "pending"
+    assert body["last_run_at"] is None
+    assert body["consecutive_failures"] == 0
+    assert body["last_error"] is None
+    assert body["failure_kind"] is None
+    assert body["config"] == {"universe": "sp500"}
+
+    stored = store.get("daily-scan")
+    assert stored is not None
+    assert stored.prompt == "rank S&P 500 by 12-1 momentum"
+    assert stored.schedule == "0 9 * * *"
+
+
+def test_create_generates_id_and_defaults_next_run_when_omitted(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={"prompt": "rebalance check", "schedule": "300000"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"]
+    assert body["next_run_at"] > 0
+    assert store.get(body["id"]) is not None
+
+
+def test_create_rejects_malformed_schedule_with_422(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={"prompt": "bad cron", "schedule": "0 99 * * *"},
+    )
+
+    assert response.status_code == 422
+    assert store.list_jobs() == []
+
+
+def test_list_returns_jobs_newest_first(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="older", created_at=1_700_000_000_000)
+    _seed(store, id="newer", created_at=1_700_000_500_000)
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    ids = [job["id"] for job in response.json()]
+    assert ids == ["newer", "older"]
+
+
+def test_list_filters_by_status(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="pending-one", status=JobStatus.PENDING)
+    _seed(store, id="done-one", status=JobStatus.COMPLETED)
+
+    response = client.get("/scheduled-runs", params={"status": "completed"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [job["id"] for job in body] == ["done-one"]
+
+
+def test_list_surfaces_retry_diagnostics(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(
+        store,
+        id="retrying",
+        status=JobStatus.PENDING,
+        last_run_at=1_700_000_100_000,
+        consecutive_failures=2,
+        last_error="TimeoutError: provider timed out",
+        failure_kind="dispatch",
+    )
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    body = response.json()[0]
+    assert body["last_run_at"] == 1_700_000_100_000
+    assert body["consecutive_failures"] == 2
+    assert body["last_error"] == "TimeoutError: provider timed out"
+    assert body["failure_kind"] == "dispatch"
+
+
+def test_list_rejects_out_of_range_limit(client: TestClient):
+    assert client.get("/scheduled-runs", params={"limit": 0}).status_code == 422
+    assert client.get("/scheduled-runs", params={"limit": 500}).status_code == 422
+
+
+
+def test_patch_updates_authored_fields_without_replacing_runtime_history(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    job = _seed(
+        store,
+        id="editable",
+        prompt="old prompt",
+        schedule="0 9 * * 1-5",
+        timezone="UTC",
+        status=JobStatus.COMPLETED,
+        last_run_at=1_700_000_100_000,
+        delivery_channel="telegram",
+        delivery_target="123",
+    )
+    original_created_at = job.created_at
+
+    response = client.patch(
+        "/scheduled-runs/editable",
+        json={
+            "prompt": "new prompt",
+            "schedule": "30 10 * * 1-5",
+            "timezone": "Europe/London",
+            "delivery_channel": "email",
+            "delivery_target": "person@example.com",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prompt"] == "new prompt"
+    assert body["schedule"] == "30 10 * * 1-5"
+    assert body["timezone"] == "Europe/London"
+    assert body["delivery_channel"] == "email"
+    assert body["delivery_target"] == "person@example.com"
+    assert body["created_at"] == original_created_at
+    assert body["last_run_at"] == 1_700_000_100_000
+    assert body["status"] == "completed"
+
+    saved = store.get("editable")
+    assert saved is not None
+    assert saved.created_at == original_created_at
+    assert saved.last_run_at == 1_700_000_100_000
+    assert saved.delivery.status.value == "none"
+
+
+def test_patch_same_cadence_and_delivery_preserves_next_run_and_receipt(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(
+        store,
+        id="stable",
+        prompt="old prompt",
+        schedule="0 9 * * 1-5",
+        timezone="UTC",
+        next_run_at=1_900_000_000_000,
+        delivery_channel="email",
+        delivery_target="person@example.com",
+        delivery=DeliveryRecord(
+            status=DeliveryStatus.SENT,
+            provider_message_id="provider-1",
+        ),
+    )
+
+    response = client.patch(
+        "/scheduled-runs/stable",
+        json={
+            "prompt": "new prompt",
+            "schedule": "0 9 * * 1-5",
+            "timezone": "UTC",
+            "delivery_channel": "email",
+            "delivery_target": "person@example.com",
+            "delivery_target_ref": None,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["next_run_at"] == 1_900_000_000_000
+    assert body["delivery_status"] == "sent"
+    assert body["delivery_provider_message_id"] == "provider-1"
+
+
+def test_patch_interval_timezone_only_preserves_next_run(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(
+        store,
+        id="interval-timezone",
+        schedule="60000",
+        timezone="UTC",
+        next_run_at=1_900_000_000_000,
+    )
+
+    response = client.patch(
+        "/scheduled-runs/interval-timezone",
+        json={"timezone": "America/New_York"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["timezone"] == "America/New_York"
+    assert body["next_run_at"] == 1_900_000_000_000
+
+    saved = store.get("interval-timezone")
+    assert saved is not None
+    assert saved.timezone == "America/New_York"
+    assert saved.next_run_at == 1_900_000_000_000
+
+
+def test_patch_rejects_incomplete_delivery_target(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="editable")
+    response = client.patch(
+        "/scheduled-runs/editable",
+        json={"delivery_channel": "email", "delivery_target": None},
+    )
+    assert response.status_code == 422
+    assert "delivery_target" in response.json()["detail"]
+
+
+def test_patch_unknown_job_returns_404(client: TestClient):
+    response = client.patch("/scheduled-runs/missing", json={"prompt": "updated"})
+    assert response.status_code == 404
+
+
+def test_patch_running_job_returns_409(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="running", status=JobStatus.RUNNING)
+    response = client.patch("/scheduled-runs/running", json={"prompt": "updated"})
+    assert response.status_code == 409
+
+
+def test_delete_removes_job_and_returns_204(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="cancel-me")
+
+    response = client.delete("/scheduled-runs/cancel-me")
+
+    assert response.status_code == 204
+    assert not response.content
+    assert "content-type" not in response.headers
+    assert store.get("cancel-me") is None
+
+
+def test_delete_unknown_job_returns_404(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.delete("/scheduled-runs/never-existed")
+
+    assert response.status_code == 404
+
+
+def test_delete_rejects_unsafe_job_id(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    # A single path segment that still fails the safe-id pattern (the dot is
+    # outside ``[A-Za-z0-9_-]``) is rejected by the handler before any store
+    # lookup, so it returns 400 rather than the 404 used for unknown ids.
+    response = client.delete("/scheduled-runs/bad.id")
+
+    assert response.status_code == 400
+
+
+def test_create_with_timezone_echoes_and_persists(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "auckland-scan",
+            "prompt": "pre-open scan of NZX names",
+            "schedule": "30 23 * * 1-5",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["timezone"] == "Pacific/Auckland"
+
+    saved = store.get("auckland-scan")
+    assert saved is not None
+    assert saved.timezone == "Pacific/Auckland"
+    assert saved.schedule == "30 23 * * 1-5"
+
+
+def test_create_without_timezone_defaults_to_null(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={"id": "utc-scan", "prompt": "scan", "schedule": "0 9 * * *"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert "timezone" in body
+    assert body["timezone"] is None
+    saved = store.get("utc-scan")
+    assert saved is not None
+    assert saved.timezone is None
+
+
+def test_create_rejects_unknown_timezone(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "bad-tz",
+            "prompt": "scan",
+            "schedule": "0 9 * * *",
+            "timezone": "Not/AZone",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "IANA timezone" in response.json()["detail"]
+    assert store.get("bad-tz") is None
+
+
+def test_list_includes_timezone(client: TestClient, store: ScheduledResearchJobStore):
+    _seed(store, id="tz-listed", schedule="0 9 * * 1-5", timezone="Australia/Adelaide")
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert rows["tz-listed"]["timezone"] == "Australia/Adelaide"
+
+
+def test_create_tz_cron_defaults_next_run_to_first_authored_occurrence(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    from src.scheduled_research.executor import next_due
+
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "first-occurrence",
+            "prompt": "scan",
+            "schedule": "30 23 * * 1-5",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    next_run_at = response.json()["next_run_at"]
+    # The first fire is the first authored wall-clock occurrence, which for a
+    # 23:30 weekday cadence is strictly in the future — never "now".
+    assert next_run_at > after
+    assert next_due("30 23 * * 1-5", before, "Pacific/Auckland") <= next_run_at
+    assert next_run_at <= next_due("30 23 * * 1-5", after, "Pacific/Auckland")
+
+
+def test_create_without_timezone_keeps_immediate_first_fire(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={"id": "legacy-default", "prompt": "scan", "schedule": "0 9 * * *"},
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    assert before <= response.json()["next_run_at"] <= after
+
+
+def test_create_interval_with_timezone_keeps_immediate_first_fire(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    before = int(__import__("time").time() * 1000)
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "interval-tz",
+            "prompt": "scan",
+            "schedule": "60000",
+            "timezone": "Pacific/Auckland",
+        },
+    )
+    after = int(__import__("time").time() * 1000)
+
+    assert response.status_code == 201
+    assert before <= response.json()["next_run_at"] <= after
+
+
+def test_create_rejects_ids_the_delete_route_would_refuse(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for bad_id in ("my scan.v1", "a/b", "café", "x" * 129):
+        response = client.post(
+            "/scheduled-runs",
+            json={"id": bad_id, "prompt": "scan", "schedule": "60000"},
+        )
+        assert response.status_code == 422, bad_id
+        assert "job id" in response.json()["detail"]
+        assert store.get(bad_id) is None
+
+
+def test_created_job_is_always_deletable(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    created = client.post(
+        "/scheduled-runs",
+        json={"prompt": "scan", "schedule": "60000"},
+    )
+    assert created.status_code == 201
+    job_id = created.json()["id"]
+
+    assert client.delete(f"/scheduled-runs/{job_id}").status_code == 204
+    assert store.get(job_id) is None
+
+
+def test_create_accepts_ids_within_the_id_rule(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for good_id in ("daily-scan", "scan_2026", "A" * 128):
+        response = client.post(
+            "/scheduled-runs",
+            json={"id": good_id, "prompt": "scan", "schedule": "60000"},
+        )
+        assert response.status_code == 201, good_id
+        assert client.delete(f"/scheduled-runs/{good_id}").status_code == 204
+def test_create_interval_accepts_a_timezone_it_will_never_use(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    # The composer attaches the browser zone to every create. An interval
+    # schedule ignores it, and the executor never resolves it, so a key this
+    # host cannot resolve must not block the create.
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "interval-unknown-zone",
+            "prompt": "scan",
+            "schedule": "60000",
+            "timezone": "Mars/Olympus_Mons",
+        },
+    )
+
+    assert response.status_code == 201
+    saved = store.get("interval-unknown-zone")
+    assert saved is not None
+    assert saved.timezone == "Mars/Olympus_Mons"
+
+
+def test_create_cron_still_rejects_an_unresolvable_timezone(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    response = client.post(
+        "/scheduled-runs",
+        json={
+            "id": "cron-unknown-zone",
+            "prompt": "scan",
+            "schedule": "0 9 * * *",
+            "timezone": "Mars/Olympus_Mons",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "IANA timezone" in response.json()["detail"]
+    assert store.get("cron-unknown-zone") is None
+
+
+def test_create_rejects_a_blank_timezone_for_both_schedule_forms(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    for schedule in ("60000", "0 9 * * *"):
+        response = client.post(
+            "/scheduled-runs",
+            json={"prompt": "scan", "schedule": schedule, "timezone": "   "},
+        )
+        assert response.status_code == 422, schedule
+
+
+def test_list_carries_the_last_verdict_record(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    from src.scheduled_research.verdict import VerdictItem, VerdictRecord
+
+    verdict = VerdictRecord(
+        session_id="sess-9",
+        recorded_at=1_700_000_100_000,
+        parse="ok",
+        outcome="DRIFT",
+        items=[VerdictItem(symbol="600519.SH", state="DRIFT", reason="band crossed")],
+        previous=VerdictRecord(
+            session_id="sess-8",
+            recorded_at=1_700_000_000_000,
+            parse="ok",
+            outcome="no_calls",
+            items=[],
+        ),
+    )
+    _seed(store, id="with-verdict", last_verdict=verdict)
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    (row,) = response.json()
+    assert row["last_verdict"]["outcome"] == "DRIFT"
+    assert row["last_verdict"]["items"][0]["symbol"] == "600519.SH"
+    assert row["last_verdict"]["previous"]["outcome"] == "no_calls"
+
+
+def test_list_omits_verdict_when_never_recorded(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="no-verdict")
+
+    response = client.get("/scheduled-runs")
+
+    assert response.status_code == 200
+    (row,) = response.json()
+    assert row["last_verdict"] is None
+
+
+def test_patch_refuses_edit_while_delivery_is_in_flight(client, store):
+    job = _seed(store, delivery=DeliveryRecord(status=DeliveryStatus.SENDING, session_id="s1", key="k1"))
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"prompt": "new prompt"})
+    assert response.status_code == 409
+    assert store.get(job.id).prompt == job.prompt
+
+
+def test_patch_email_format_preserves_target_ref_and_clears_old_receipt(client, store):
+    job = _seed(store, delivery_channel="email", delivery_target="reader@example.test",
+                delivery_target_ref="mail-reader", delivery_target_label="Reader", delivery_format="html",
+                delivery=DeliveryRecord(status=DeliveryStatus.SENT, session_id="s1", key="k1"))
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"delivery_format": "pdf"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["delivery_format"] == "pdf"
+    assert body["delivery_target_ref"] == "mail-reader"
+    assert body["delivery_status"] == "none"
+    assert store.get(job.id).delivery.session_id == "s1"  # retain verdict observation
+    assert client.patch(f"/scheduled-runs/{job.id}", json={"prompt": "other"}).json()["delivery_format"] == "pdf"
+    assert client.patch(f"/scheduled-runs/{job.id}", json={"delivery_format": None}).json()["delivery_format"] is None
+
+
+def test_patch_leaving_email_clears_implicit_format_and_refuses_explicit_pdf(client, store):
+    job = _seed(store, delivery_channel="email", delivery_target="reader@example.test", delivery_format="pdf")
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"delivery_channel": "telegram", "delivery_target": "123", "delivery_format": "pdf"})
+    assert response.status_code == 422
+    assert store.get(job.id).delivery_channel == "email"
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"delivery_channel": "telegram", "delivery_target": "123"})
+    assert response.status_code == 200
+    assert response.json()["delivery_format"] is None
+
+
+def test_protected_pdf_create_validates_format_and_private_password(client, store, monkeypatch):
+    body = {
+        "id": "protected-pdf",
+        "prompt": "daily report",
+        "schedule": "60000",
+        "delivery_channel": "email",
+        "delivery_target": "reader@example.test",
+        "delivery_format": "pdf",
+        "protect_pdf": True,
+    }
+    invalid = {**body, "delivery_format": "html"}
+    assert client.post("/scheduled-runs", json=invalid).status_code == 422
+    assert store.get("protected-pdf") is None
+    unsafe_config = {**body, "protect_pdf": False, "config": {"nested": [{"pdf_password": "do-not-save"}]}}
+    rejected_config = client.post("/scheduled-runs", json=unsafe_config)
+    assert rejected_config.status_code == 422
+    assert "do-not-save" not in rejected_config.text
+    assert store.get("protected-pdf") is None
+
+    monkeypatch.setattr(scheduled_routes, "_email_pdf_password_configured", lambda: False)
+    response = client.post("/scheduled-runs", json=body)
+    assert response.status_code == 422
+    assert "password is configured" in response.json()["detail"]
+    assert store.get("protected-pdf") is None
+
+    monkeypatch.setattr(scheduled_routes, "_email_pdf_password_configured", lambda: True)
+    response = client.post("/scheduled-runs", json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["protect_pdf"] is True
+    assert "pdf_password" not in response.text
+
+
+def test_protected_pdf_update_persists_only_boolean_and_requires_secret(client, store, monkeypatch):
+    job = _seed(
+        store,
+        id="protectable",
+        delivery_channel="email",
+        delivery_target="reader@example.test",
+        delivery_format="pdf",
+    )
+    monkeypatch.setattr(scheduled_routes, "_email_pdf_password_configured", lambda: False)
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"protect_pdf": True})
+    assert response.status_code == 422
+    assert store.get(job.id).protect_pdf is False
+    rejected_config = client.patch(
+        f"/scheduled-runs/{job.id}",
+        json={"config": {"nested": [{"pdf_password": "do-not-save"}]}},
+    )
+    assert rejected_config.status_code == 422
+    assert "do-not-save" not in rejected_config.text
+
+    monkeypatch.setattr(scheduled_routes, "_email_pdf_password_configured", lambda: True)
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"protect_pdf": True})
+    assert response.status_code == 200, response.text
+    assert response.json()["protect_pdf"] is True
+    persisted = store.path.read_text()
+    assert '"protect_pdf": true' in persisted
+    assert "pdf_password" not in persisted
+    assert client.patch(f"/scheduled-runs/{job.id}", json={"delivery_format": "html"}).status_code == 422
+
+
+def test_protect_pdf_round_trip_contains_boolean_only():
+    from src.scheduled_research.models import ScheduledResearchJob
+
+    job = ScheduledResearchJob(
+        id="safe-job",
+        prompt="report",
+        schedule="60000",
+        next_run_at=1_700_000_000_000,
+        created_at=1_700_000_000_000,
+        delivery_channel="email",
+        delivery_target="reader@example.test",
+        delivery_format="pdf",
+        protect_pdf=True,
+    )
+    encoded = job.to_dict()
+    assert encoded["protect_pdf"] is True
+    assert "pdf_password" not in repr(encoded)
+    assert ScheduledResearchJob.from_dict(encoded).protect_pdf is True
+    unsafe = {**encoded, "config": {"nested": [{"pdf_password": "do-not-save"}]}}
+    with pytest.raises(ValueError, match="must not contain pdf_password"):
+        ScheduledResearchJob.from_dict(unsafe)
+
+
+def test_scheduled_email_dispatch_passes_only_protection_flag(monkeypatch):
+    class Adapter:
+        async def send_with_receipt(self, message):
+            self.message = message
+            return None
+
+    adapter = Adapter()
+    manager = type("Manager", (), {"get_channel": lambda self, name: adapter if name == "email" else None})()
+    monkeypatch.setattr(api_server, "_channel_manager", manager)
+    import asyncio
+
+    asyncio.run(scheduled_routes._send_scheduled_briefing(
+        "email", "reader@example.test", "report", "pdf", True
+    ))
+    assert adapter.message.metadata == {
+        "force_send": True,
+        "delivery_format": "pdf",
+        "protect_pdf": True,
+    }
+    assert "pdf_password" not in repr(adapter.message.metadata)
