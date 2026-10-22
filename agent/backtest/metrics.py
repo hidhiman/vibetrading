@@ -41,7 +41,7 @@ _TRADING_DAYS = {
     # data granularity; model as US equity session as a conservative default)
     "local": 252, "qveris": 252,
     # Indian equity
-    "india_broker": 252,
+    "india_broker": 252, "india_local": 252,
     # Korean equity (KRX)
     "pykrx": 252,
     # Brazilian equity (B3)
@@ -70,7 +70,7 @@ _BARS_PER_DAY = {
             # forex/CFD (24h intraday)
             "mt5": 1440, "tickerall": 1440,
             # Indian equity (6.25h session)
-            "india_broker": 375,
+            "india_broker": 375, "india_local": 375,
             # Korean equity (6.5h session, 09:00-15:30 KST)
             "pykrx": 390,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
@@ -84,7 +84,7 @@ _BARS_PER_DAY = {
             "okx": 288,  "ccxt": 288,  "binance": 288,
             "nobitex": 288,  "wallex": 288,
             "mt5": 288, "tickerall": 288,
-            "india_broker": 75,
+            "india_broker": 75, "india_local": 75,
             "pykrx": 78,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
             "b3_cotahist": 84,
@@ -97,7 +97,7 @@ _BARS_PER_DAY = {
             "okx": 96,   "ccxt": 96,   "binance": 96,
             "nobitex": 96,   "wallex": 96,
             "mt5": 96, "tickerall": 96,
-            "india_broker": 25,
+            "india_broker": 25, "india_local": 25,
             "pykrx": 26,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
             "b3_cotahist": 28,
@@ -110,7 +110,7 @@ _BARS_PER_DAY = {
             "okx": 48,   "ccxt": 48,   "binance": 48,
             "nobitex": 48,   "wallex": 48,
             "mt5": 48, "tickerall": 48,
-            "india_broker": 13,
+            "india_broker": 13, "india_local": 13,
             "pykrx": 13,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
             "b3_cotahist": 14,
@@ -123,7 +123,7 @@ _BARS_PER_DAY = {
             "okx": 24,   "ccxt": 24,   "binance": 24,
             "nobitex": 24,   "wallex": 24,
             "mt5": 24, "tickerall": 24,
-            "india_broker": 7,
+            "india_broker": 7, "india_local": 7,
             "pykrx": 7,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
             "b3_cotahist": 7,
@@ -136,7 +136,7 @@ _BARS_PER_DAY = {
             "okx": 6,    "ccxt": 6,    "binance": 6,
             "nobitex": 6,    "wallex": 6,
             "mt5": 6, "tickerall": 6,
-            "india_broker": 2,
+            "india_broker": 2, "india_local": 2,
             "pykrx": 2,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
             "b3_cotahist": 2,
@@ -149,7 +149,7 @@ _BARS_PER_DAY = {
             "okx": 1,    "ccxt": 1,    "binance": 1,
             "nobitex": 1,    "wallex": 1,
             "mt5": 1, "tickerall": 1,
-            "india_broker": 1,
+            "india_broker": 1, "india_local": 1,
             "pykrx": 1,
             # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
             "b3_cotahist": 1,

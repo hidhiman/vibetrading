@@ -57,6 +57,7 @@ VALID_SOURCES: set[str] = {
     "gildata",
     "qveris",  # QVERIS-INTEGRATION
     "india_broker",
+    "india_local",
     "pykrx",
     "longbridge",
     "mt5",
@@ -120,6 +121,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.gildata_loader",
             "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
             "backtest.loaders.india_broker_loader",
+            "backtest.loaders.india_local_loader",
             "backtest.loaders.pykrx_loader",
             "backtest.loaders.longbridge",
             "backtest.loaders.mt5_loader",
@@ -225,7 +227,10 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "gildata",
         "local",
     ],
-    "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
+    # india_local reads an opt-in local Parquet archive (VIBE_TRADING_INDIA_DATA_ROOT).
+    # It trails the chain by default; MARKET_DATA_ORDER_INDIA_EQUITY moves it to
+    # the front, where it defers to Yahoo for symbols/windows it does not cover.
+    "india_equity": ["yahoo", "yfinance", "india_broker", "local", "india_local"],
     "kr_equity": ["pykrx", "yahoo", "yfinance", "local"],
     # TSX (.TO) / TSX Venture (.V): direct Yahoo first, SDK fallback second.
     "ca_equity": ["yahoo", "yfinance", "local"],
@@ -256,7 +261,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "forex": ["mt5", "akshare", "yfinance", "local"],
     # Yahoo index symbols (^SPX, ^NDX, ^FTSE, ^VIX, ...): served verbatim by
     # the public chart endpoint, same as the =F/=X conventions.
-    "index": ["yahoo", "yfinance", "gildata", "local"],
+    "index": ["yahoo", "yfinance", "gildata", "local", "india_local"],
+    # Continuous NSE/BSE futures (NIFTY-I.NFO) exist only in the local archive.
+    "india_futures": ["india_local"],
 }
 
 
@@ -322,7 +329,7 @@ PRICE_CALIBER_BY_SOURCE_MARKET: dict[tuple[str, str], str] = {
 
 #: Markets with no corporate-action adjustment concept. Their sources stamp
 #: "na" and stay out of mixed-caliber comparisons.
-_NA_CALIBER_MARKETS = frozenset({"crypto", "forex", "futures", "macro"})
+_NA_CALIBER_MARKETS = frozenset({"crypto", "forex", "futures", "india_futures", "macro"})
 
 #: A price index has no corporate actions, so every source serves the one
 #: unadjusted level, whatever it does to a stock: eastmoney fqt=1 equals fqt=0

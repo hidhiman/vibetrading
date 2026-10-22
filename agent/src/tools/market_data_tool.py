@@ -102,7 +102,11 @@ class MarketDataTool(BaseTool):
                 "items": {"type": "string"},
                 "description": (
                     'Symbols such as ["AAPL.US"], ["700.HK"], ["TD.TO"], '
-                    '["PNG.V"], or ["BTC-USDT"].'
+                    '["PNG.V"], or ["BTC-USDT"]. India: equities RELIANCE.NS / '
+                    "RELIANCE.BO; indices ^NSEI (NIFTY 50), ^NSEBANK, ^BSESN, "
+                    "^INDIAVIX; continuous futures NIFTY-I.NFO (near month), "
+                    "NIFTY-II.NFO (next month), BANKNIFTY-I.NFO, RELIANCE-I.NFO, "
+                    "SENSEX-I.BFO (back-adjusted at each roll)."
                 ),
             },
             "start_date": {
@@ -132,7 +136,9 @@ class MarketDataTool(BaseTool):
                     "read-only Shoonya/Dhan bars for .NS/.BO. mt5: forex/metals "
                     "from a local MetaTrader 5 terminal (Windows; e.g. EUR/USD, "
                     "XAUUSD.FX); tickerall: the same feed hosted, no terminal, "
-                    "any OS. local: your own CSV/Parquet/DuckDB files."
+                    "any OS. local: your own CSV/Parquet/DuckDB files. "
+                    "india_local: a local NSE/BSE Parquet archive (equities, "
+                    "indices, continuous futures)."
                 ),
                 "default": "auto",
             },

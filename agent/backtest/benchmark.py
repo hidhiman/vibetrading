@@ -178,6 +178,8 @@ def _infer_market(codes: list[str], source: str) -> str:
         return "ca_equity"
     if first.endswith((".NS", ".BO")):
         return "india_equity"
+    if first.endswith((".NFO", ".BFO")):
+        return "india_futures"
     if first.endswith(".SA"):
         return "br_equity"
     if first.endswith((".KS", ".KQ")):

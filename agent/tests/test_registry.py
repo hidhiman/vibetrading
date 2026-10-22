@@ -202,6 +202,7 @@ class TestFallbackChains:
             "us_equity",
             "hk_equity",
             "india_equity",
+            "india_futures",
             "kr_equity",
             "ca_equity",
             "ar_equity",

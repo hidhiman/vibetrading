@@ -102,6 +102,9 @@ _MARKET_PATTERNS = [
     # India equities: NSE (RELIANCE.NS) / BSE (500325.BO); tickers may carry
     # '&' and '-' (e.g. M&M.NS, BAJAJ-AUTO.NS).
     (re.compile(r"^[A-Z0-9&.\-]+\.(NS|BO)$", re.I), "india_equity"),
+    # India futures, continuous by rank: NIFTY-I.NFO (near month), NIFTY-II.NFO
+    # (next month); .NFO is NSE F&O, .BFO is BSE F&O (SENSEX-I.BFO).
+    (re.compile(r"^[A-Z0-9&\-]+-II?\.(NFO|BFO)$", re.I), "india_futures"),
     # Korea equities: KOSPI (005930.KS) / KOSDAQ (247540.KQ), 6-digit codes.
     (re.compile(r"^\d{6}\.(KS|KQ)$", re.I), "kr_equity"),
     # Canada equities: Toronto Stock Exchange (TD.TO) and TSX Venture
@@ -239,6 +242,7 @@ _MARKET_CURRENCY = {
     "us_equity": "USD",
     "hk_equity": "HKD",
     "india_equity": "INR",
+    "india_futures": "INR",
     "kr_equity": "KRW",
     "ca_equity": "CAD",
     "ar_equity": "ARS",
@@ -362,8 +366,8 @@ def _detect_market(code: str) -> str:
         code: Ticker / symbol string.
 
     Returns:
-        Market type (a_share/us_equity/hk_equity/india_equity/kr_equity/
-        ca_equity/ar_equity/br_equity/crypto/futures/forex).
+        Market type (a_share/us_equity/hk_equity/india_equity/india_futures/
+        kr_equity/ca_equity/ar_equity/br_equity/crypto/futures/forex).
         Bare 1-5 letter alphabetic tickers resolve to ``us_equity``;
         bare 6-letter codes that start with a precious-metal or G10
         currency code (whitelist) resolve to ``forex``; concatenated

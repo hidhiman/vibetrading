@@ -31,7 +31,9 @@ _SAMPLES: dict[str, tuple[str, str, str]] = {
 }
 
 # Crypto has a currency row but no listing suffix: its pairs carry the quote.
-_NOT_A_LISTING_MARKET = {"crypto"}
+# India continuous futures (NIFTY-I.NFO) are a local-archive series, not a
+# listing symbol search can return.
+_NOT_A_LISTING_MARKET = {"crypto", "india_futures"}
 
 
 def test_every_currency_market_has_a_sample() -> None:
@@ -47,3 +49,13 @@ def test_identity_and_search_know_the_market(market: str) -> None:
     assert _infer_venue(symbol) is not None
     assert _infer_currency(symbol) == _MARKET_CURRENCY[market]
     assert _from_yahoo_symbol(yahoo_symbol, {"quoteType": "EQUITY"}) == (symbol, label)
+
+
+@pytest.mark.parametrize(
+    ("symbol", "venue"), [("NIFTY-I.NFO", "nse_fo"), ("SENSEX-II.BFO", "bse_fo")]
+)
+def test_identity_knows_india_continuous_futures(symbol: str, venue: str) -> None:
+    assert _detect_market(symbol) == "india_futures"
+    assert _scan_symbols(f"What did {symbol} close at yesterday?") == {symbol}
+    assert _infer_venue(symbol) == venue
+    assert _infer_currency(symbol) == _MARKET_CURRENCY["india_futures"]

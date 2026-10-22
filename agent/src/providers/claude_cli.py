@@ -75,6 +75,10 @@ _PROTOCOL = (
     "results in the next turn. Respond with action=tool_calls and the calls you "
     "want (name + arguments that match the tool's JSON schema), or action=final "
     "with your complete answer in content once you have what you need.\n"
+    "The tools listed below are NOT callable through tool use: invoking one "
+    "directly always fails with \"No such tool available\". The only way to run "
+    "them is to put them in the tool_calls field of your structured response "
+    "with action=tool_calls.\n"
     "Available tools (OpenAI function format):\n"
 )
 _FINAL_ONLY = (
@@ -84,7 +88,9 @@ _FINAL_ONLY = (
 )
 
 # Where the native Claude Code installer puts the executable; checked last.
-_FALLBACK_CLI_PATH = Path.home() / ".local" / "bin" / "claude"
+_FALLBACK_CLI_PATH = Path.home() / ".local" / "bin" / (
+    "claude.exe" if os.name == "nt" else "claude"
+)
 
 
 def resolve_claude_cli() -> str:

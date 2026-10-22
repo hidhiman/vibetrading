@@ -125,7 +125,7 @@ _CANONICAL_SYMBOL_RE = re.compile(
     # Every equity suffix the market-data layer routes (backtest.engines.
     # _market_hooks._MARKET_PATTERNS); test_market_identity_parity keeps the
     # two in step, because .L / .VN / .BA each landed there without landing here.
-    r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V|BA|SA|L|VN)|"
+    r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|NFO|BFO|FX|TO|V|BA|SA|L|VN)|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"[A-Z]{2,15}(?:" + "|".join(_JOINED_CRYPTO_QUOTE_SUFFIXES) + r")|"
     r"\^[A-Z0-9&.\-]{1,20}|"
@@ -251,6 +251,8 @@ def _infer_venue(symbol: str) -> str | None:
         ".KQ": "kosdaq",
         ".NS": "nse",
         ".BO": "bse",
+        ".NFO": "nse_fo",
+        ".BFO": "bse_fo",
         ".FX": "forex",
         ".TO": "toronto",
         ".V": "tsx_venture",
@@ -320,6 +322,8 @@ def _infer_currency(symbol: str) -> str | None:
         ".KQ": "KRW",
         ".NS": "INR",
         ".BO": "INR",
+        ".NFO": "INR",
+        ".BFO": "INR",
         ".TO": "CAD",
         ".V": "CAD",
         ".BA": "ARS",
@@ -363,6 +367,10 @@ def _infer_instrument_type(symbol: str, candidate_type: Any = None) -> str:
         return "index"
     upper = _normalize_symbol(symbol)
     if upper.endswith("=F"):
+        return "future"
+    # NSE/BSE continuous futures (NIFTY-I.NFO). Checked before the dash rule
+    # below, which would read "NIFTY-I.NFO" as a forex pair.
+    if upper.endswith((".NFO", ".BFO")):
         return "future"
     if upper.endswith(".FX"):
         return "forex"

@@ -692,7 +692,7 @@ def test_get_data_source_settings_lists_default_source_orders(
     entries = response.json()["source_orders"]
     orders = {entry["market"]: entry for entry in entries}
     assert set(orders) == {
-        "a_share", "us_equity", "hk_equity", "india_equity", "kr_equity",
+        "a_share", "us_equity", "hk_equity", "india_equity", "india_futures", "kr_equity",
         "ca_equity", "ar_equity", "br_equity", "vietnam_equity", "uk_equity", "crypto", "futures",
         "fund", "macro", "forex", "index",
     }

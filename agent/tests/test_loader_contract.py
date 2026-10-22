@@ -27,6 +27,7 @@ CONTRACT_SUITES = {
     "futu": "test_futu_loader.py",
     "gildata": "test_gildata_loader.py",
     "india_broker": "test_india_broker_loader.py",
+    "india_local": "test_india_local_loader.py",
     "local": "test_local_loader.py",
     "longbridge": "test_longbridge_loader.py",
     "mootdx": "test_mootdx_loader.py",

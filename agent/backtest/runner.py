@@ -850,6 +850,7 @@ _MARKET_TO_SOURCE = {
     "us_equity": "yfinance",
     "hk_equity": "yfinance",
     "india_equity": "yahoo",
+    "india_futures": "india_local",
     "kr_equity": "pykrx",
     "ca_equity": "yahoo",
     "ar_equity": "yahoo",
@@ -1777,6 +1778,11 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     if len(markets) > 1:
         from backtest.engines.composite import CompositeEngine
         return CompositeEngine(config, codes)
+
+    # India futures (NIFTY-I.NFO): INR, lot-sized, continuous back-adjusted series.
+    if "india_futures" in markets:
+        from backtest.engines.india_futures import IndiaFuturesEngine
+        return IndiaFuturesEngine(config)
 
     # Futures routing (Wave 2)
     if "futures" in markets:
